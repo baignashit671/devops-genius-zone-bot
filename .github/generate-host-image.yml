@@ -1,0 +1,54 @@
+name: Generate AI presenter portrait (run once)
+
+# Run this ONCE from the Actions tab. It generates candidate portraits of a
+# fictional presenter on a free Kaggle GPU and uploads them as an artifact.
+# Download the artifact, open contact_sheet.jpg, pick your favourite, and
+# commit it to the repo as  assets/host.png  - the daily workflow then uses
+# that exact image forever, so the presenter's face never changes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      appearance:
+        description: "Optional look of the presenter (leave blank for the default: fictional 34-year-old American male DevOps engineer, short dark brown hair, light stubble, navy t-shirt)"
+        required: false
+        default: ""
+        type: string
+      count:
+        description: "How many candidates (1-16)"
+        required: false
+        default: "8"
+        type: string
+
+jobs:
+  portraits:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install Kaggle CLI
+        run: python -m pip install -q "kaggle>=2.0,<3" six Pillow
+
+      - name: Generate candidates on Kaggle GPU
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          APPEARANCE: ${{ inputs.appearance }}
+          COUNT: ${{ inputs.count }}
+        run: |
+          python tools/generate_host_candidates.py --count "${COUNT:-8}" --appearance "${APPEARANCE:-}"
+
+      - name: Upload candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-candidates-${{ github.run_number }}
+          path: |
+            host_candidates/*.png
+            host_candidates/contact_sheet.jpg
+          retention-days: 14
