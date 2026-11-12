@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────
+# REAL production experiences for DevOps Genius Zone scripts (v3.3.0)
+# ─────────────────────────────────────────────────────────────────────────
+# This is what makes each video ORIGINAL instead of template content
+# (YouTube's July 2026 "inauthentic content" update targets videos that
+# only repeat widely available material without original insight).
+#
+# How it works:
+#   - Each day, the bot matches the topic against `tags` (case-insensitive
+#     substring match) and gives Gemini up to 2 matching stories.
+#   - Gemini weaves ONE into ACT 1 or ACT 2 as "a real incident from our
+#     team", keeping your facts exactly as written.
+#   - With no matching story, the script tells NO first-person story at all
+#     (it uses "here's a scenario that happens all the time" instead).
+#
+# Write 2-4 sentences each: what broke, what you saw, the root cause, what
+# fixed it, what you changed afterwards. Keep it anonymized (no client or
+# company names, no secrets). Only write things that really happened.
+#
+# The two entries below are FORMAT EXAMPLES ONLY - replace them with your own
+# real incidents (or delete them). They are commented out on purpose so they
+# can never end up in a video.
+
+stories:
+#  - tags: [oom, resource limits, memory, kubernetes resource]
+#    story: >
+#      A Java service kept getting OOMKilled every few hours after a release.
+#      The container limit was 1Gi but the JVM heap was set to 1Gi as well, so
+#      metaspace and threads pushed it over. We set -XX:MaxRAMPercentage=75 and
+#      added an alert on container memory above 85 percent of the limit.
+#
+#  - tags: [terraform state, state lock, terraform]
+#    story: >
+#      A CI job was cancelled mid terraform apply and left the DynamoDB lock in
+#      place, blocking every pipeline for the team. We confirmed no apply was
+#      running, used terraform force-unlock with the lock ID, and added a
+#      concurrency group to the pipeline so two applies can never overlap.

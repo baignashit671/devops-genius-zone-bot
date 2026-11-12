@@ -1,0 +1,21 @@
+# DevOps Genius Zone bot — requirements.txt (v3.3.0)
+
+kokoro-onnx>=0.6.1,<0.7     # DEFAULT voice since v3.3.0 (offline male voice am_michael; MIT code, Apache-2.0 model)
+edge-tts>=7.2.0,<8          # automatic fallback voice
+Pillow>=10.0.0,<13
+numpy>=1.24
+requests>=2.31.0,<3
+PyYAML>=6.0                 # reads stories.yaml (your real production experiences)
+google-api-python-client>=2.100.0,<3
+google-auth>=2.23.0,<3
+google-auth-oauthlib>=1.1.0,<2   # also used by reauth_youtube.py (run locally)
+google-genai>=1.0.0,<3           # Gemini script + multi-model fallback + technical review pass
+python-pptx>=1.0.0,<2            # builds the real, editable .pptx slide deck
+
+# AI presenter (Phase 2): drives the free Kaggle GPU job. Without Kaggle
+# secrets the bot simply skips the presenter.
+kaggle>=2.0,<3
+six                              # kaggle 2.x imports it but does not declare it
+
+# OPTIONAL: only used when a run sets use_elevenlabs=true.
+elevenlabs>=2.0.0,<3
