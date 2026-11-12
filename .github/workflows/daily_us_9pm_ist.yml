@@ -1,0 +1,758 @@
+name: Daily Upload – 9 PM IST (Idempotent)
+
+on:
+  schedule:
+    # WHY THIS IS NOT 9 PM: GitHub's scheduler fires cron runs hours late on
+    # this repo (observed: runs created ~1:50-3:00 AM IST for a ~9:15 PM IST
+    # cron - a consistent ~5 h delay). That delay cannot be fixed from inside
+    # the repo, so go-live time is decoupled from it instead:
+    #   - the job is triggered EARLY in the day (12:07 PM IST = 06:37 UTC;
+    #     GitHub cron is always UTC and ignores the TZ env var), and
+    #   - main.py uploads the video as PRIVATE with a YouTube publishAt, so
+    #     YouTube itself flips it to PUBLIC at exactly 9:00 PM IST
+    #     (PUBLISH_AT_IST_HOUR below), no matter when the job really ran.
+    # The job needs ~20-40 min (10-12 min videos since v3.2.0), so it has
+    # ~9 h of slack before 9 PM. If it
+    # ever starts too late for the slot, main.py publishes immediately.
+    # Minute :37 (not :00/:30) avoids GitHub's busiest scheduler minutes.
+    #
+    # Frequency: daily. The voice is free edge_tts by default (v3.2.0), so
+    # there is no ElevenLabs credit budget to stay under any more.
+    - cron: "37 6 * * *"
+    # Backup trigger (~7:37 AM IST). If the main run is delayed or fails, this
+    # one covers it. Safe: concurrency queues them and the "already uploaded
+    # today" check below skips the second run once the first has committed
+    # upload_log.json.
+    - cron: "7 2 * * *"
+  workflow_dispatch:
+    inputs:
+      day_override:
+        description: "Day number. Leave blank for automatic date-based day."
+        required: false
+        default: ""
+        type: string
+      test_mode:
+        description: "true = build video but skip upload"
+        required: false
+        default: "false"
+        type: string
+      use_elevenlabs:
+        description: "true = use the ElevenLabs voice for this run (spends credits). Default false = free Kokoro male voice (am_michael), edge_tts as fallback."
+        required: false
+        default: "false"
+        type: string
+      use_ai_host:
+        description: "true = AI presenter (needs assets/host.png + Kaggle secrets; uses free Kaggle GPU time). false = slides only."
+        required: false
+        default: "true"
+        type: string
+      host_mode:
+        description: "key = presenter on the hook, chapter openers and outro (~2-4 min, default). all = presenter on every explanation slide (more GPU time)."
+        required: false
+        default: "key"
+        type: string
+
+# Prevent two daily uploads from running at the same time.
+concurrency:
+  group: devops-daily-upload
+  cancel-in-progress: false
+
+jobs:
+  upload-video:
+    name: "Create and Upload Video (9 PM IST)"
+    runs-on: ubuntu-24.04
+    # 90 not 60: run #228 spent 28 min just downloading LibreOffice via a slow
+    # Ubuntu mirror (53 kB/s) and finished in 46m44s - one slower mirror day
+    # would have hit a 60 min kill mid-render. Plenty of slack before the 9 PM
+    # scheduled publish since the cron fires at 12:07 PM IST.
+    # 120 (was 90): v3.3.0 adds Kokoro TTS (~3-6 min on CPU) and the final
+    # overlay/caption encode (~5-8 min). The Kaggle presenter job runs in
+    # parallel with slide rendering and is capped by HOST_TIMEOUT_MIN.
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    env:
+      # India timezone for scripts/date calculations
+      TZ: Asia/Kolkata
+      # Keep GitHub Actions compatible with Node.js 24
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # ============================================================
+      # 2. DEBUG / TIMEZONE CHECK
+      # ============================================================
+      - name: Show workflow information
+        run: |
+          echo "=========================================="
+          echo "DAILY DEVOPS VIDEO AUTOMATION"
+          echo "=========================================="
+          echo "Event:"
+          echo "${{ github.event_name }}"
+          echo ""
+          echo "Repository:"
+          echo "${{ github.repository }}"
+          echo ""
+          echo "Branch:"
+          echo "${{ github.ref_name }}"
+          echo ""
+          echo "Workflow:"
+          echo "${{ github.workflow }}"
+          echo ""
+          echo "Run number:"
+          echo "${{ github.run_number }}"
+          echo ""
+          echo "UTC time:"
+          date -u
+          echo ""
+          echo "IST time:"
+          TZ=Asia/Kolkata date
+          echo ""
+          echo "=========================================="
+
+      # ============================================================
+      # 3. PYTHON
+      # ============================================================
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ============================================================
+      # 4. CHECK PYTHON
+      # ============================================================
+      - name: Verify Python installation
+        run: |
+          set -e
+          echo "Python:"
+          python --version
+          echo ""
+          echo "Pip:"
+          python -m pip --version
+
+      # ============================================================
+      # 5. INSTALL FFMPEG
+      # ============================================================
+      - name: Install FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          FFMPEG_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+          echo "=========================================="
+          echo "Installing FFmpeg"
+          echo "=========================================="
+          echo "Downloading FFmpeg..."
+          curl -fL \
+            --retry 3 \
+            --retry-delay 5 \
+            "$FFMPEG_URL" \
+            -o ffmpeg.tar.xz
+          echo "Extracting FFmpeg..."
+          tar -xf ffmpeg.tar.xz
+          FFMPEG_DIR="$(find . -maxdepth 1 -type d -name 'ffmpeg-*' | head -1)"
+          if [ -z "$FFMPEG_DIR" ]; then
+            echo "ERROR: FFmpeg directory not found."
+            exit 1
+          fi
+          echo "FFmpeg directory:"
+          echo "$FFMPEG_DIR"
+          if [ -f "$FFMPEG_DIR/bin/ffmpeg" ] && \
+             [ -f "$FFMPEG_DIR/bin/ffprobe" ]; then
+            echo "Found FFmpeg binaries in bin/"
+            sudo cp "$FFMPEG_DIR/bin/ffmpeg" /usr/local/bin/ffmpeg
+            sudo cp "$FFMPEG_DIR/bin/ffprobe" /usr/local/bin/ffprobe
+          elif [ -f "$FFMPEG_DIR/ffmpeg" ] && \
+               [ -f "$FFMPEG_DIR/ffprobe" ]; then
+            echo "Found FFmpeg binaries in root directory."
+            sudo cp "$FFMPEG_DIR/ffmpeg" /usr/local/bin/ffmpeg
+            sudo cp "$FFMPEG_DIR/ffprobe" /usr/local/bin/ffprobe
+          else
+            echo "ERROR: Could not find FFmpeg binaries."
+            echo "Directory contents:"
+            find "$FFMPEG_DIR" -maxdepth 3 -type f | head -100
+            exit 1
+          fi
+          sudo chmod +x /usr/local/bin/ffmpeg
+          sudo chmod +x /usr/local/bin/ffprobe
+          rm -rf ffmpeg.tar.xz "$FFMPEG_DIR"
+          echo ""
+          echo "FFmpeg version:"
+          ffmpeg -version | head -1
+          echo ""
+          echo "FFprobe version:"
+          ffprobe -version | head -1
+          echo ""
+          echo "FFmpeg installation successful."
+
+      # ============================================================
+      # 6. INSTALL LIBREOFFICE + POPPLER (for real .pptx -> slide-frame rendering)
+      #    NEW in v3.1.0 — required for the python-pptx slide deck pipeline.
+      #    If this step is ever removed/fails, main.py does NOT fail the
+      #    video: build_video() auto-falls-back to the old Pillow-rendered
+      #    slides and logs "slides_engine": "pil" in upload_log.json.
+      # ============================================================
+      - name: Install LibreOffice + poppler (for slide rendering)
+        id: libreoffice
+        # Run #19 (11 Nov): azure.archive.ubuntu.com DNS was down on the runner;
+        # apt hung ~36 min on this step, then exit 100 killed the whole job
+        # before any video was made. Now: short per-request timeouts, 3 attempts
+        # (2nd/3rd switch to the main archive.ubuntu.com mirror), a hard 15 min
+        # cap, and continue-on-error so a dead mirror only downgrades the slides
+        # to the built-in Pillow renderer instead of losing the day's video.
+        continue-on-error: true
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -uo pipefail
+          APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Acquire::ForceIPv4=true"
+          for attempt in 1 2 3; do
+            echo "=== apt attempt ${attempt}/3 ==="
+            if [ "$attempt" -ge 2 ]; then
+              echo "Switching apt mirror azure.archive.ubuntu.com -> archive.ubuntu.com"
+              sudo sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' \
+                /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list 2>/dev/null || true
+            fi
+            if timeout 300 sudo apt-get update $APT_OPTS && \
+               timeout 600 sudo apt-get install -y --no-install-recommends $APT_OPTS \
+                 libreoffice-impress poppler-utils; then
+              echo ""
+              soffice --version
+              pdftoppm -v
+              exit 0
+            fi
+            echo "apt attempt ${attempt} failed - waiting $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
+          echo "::warning::LibreOffice install failed after 3 attempts - today's video will use the built-in Pillow slides (slides_engine=pil)."
+          exit 1
+
+      # ============================================================
+      # 6b. CACHE THE KOKORO VOICE MODEL (~350 MB, from the kokoro-onnx GitHub release)
+      # ============================================================
+      - name: Cache Kokoro voice model
+        uses: actions/cache@v4
+        with:
+          path: models/kokoro
+          key: kokoro-onnx-model-v1.0
+
+      # ============================================================
+      # 7. INSTALL PYTHON PACKAGES
+      # ============================================================
+      - name: Install Python packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          if [ ! -f requirements.txt ]; then
+            echo "ERROR: requirements.txt not found."
+            exit 1
+          fi
+          python -m pip install -r requirements.txt
+          # kokoro-onnx phonemizes with espeak-ng (bundled via espeakng-loader);
+          # quick import check so a broken voice install shows up here, not mid-run.
+          python -c "import kokoro_onnx, onnxruntime; print('kokoro-onnx', 'OK')" || echo "WARNING: kokoro-onnx import failed - the bot will fall back to edge_tts"
+          echo ""
+          echo "Python packages installed successfully."
+
+      # ============================================================
+      # 8. WRITE GOOGLE CREDENTIALS
+      # ============================================================
+      - name: Write Google credentials
+        shell: bash
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+          python3 << 'PYEOF'
+          import json
+          import os
+          import sys
+          raw = os.environ.get("GOOGLE_CREDENTIALS", "").strip()
+          if not raw:
+              print("ERROR: GOOGLE_CREDENTIALS secret is empty.")
+              sys.exit(1)
+          try:
+              data = json.loads(raw)
+          except json.JSONDecodeError as e:
+              print(f"ERROR: GOOGLE_CREDENTIALS is not valid JSON: {e}")
+              sys.exit(1)
+          required = [
+              "token_uri",
+              "client_id",
+              "client_secret"
+          ]
+          missing = [
+              key for key in required
+              if key not in data or not data[key]
+          ]
+          if missing:
+              print(
+                  "ERROR: Missing required Google credential fields:"
+              )
+              print(missing)
+              sys.exit(1)
+          with open("token.json", "w") as f:
+              json.dump(
+                  data,
+                  f,
+                  separators=(",", ":")
+              )
+          print("token.json written successfully.")
+          PYEOF
+
+      # ============================================================
+      # 9. VERIFY GOOGLE / YOUTUBE
+      # ============================================================
+      - name: Verify and refresh Google credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 << 'PYEOF'
+          import sys
+          import json
+          from google.oauth2.credentials import Credentials
+          from google.auth.transport.requests import Request
+          from googleapiclient.discovery import build
+          # Must match devops_365_bot.py SCOPES. This step refreshes the
+          # token and rewrites token.json; refreshing with a SMALLER scope
+          # list yields an access token without youtube.force-ssl, which
+          # made captions 403 even with a correctly re-authorized secret.
+          SCOPES = [
+              "https://www.googleapis.com/auth/youtube.upload",
+              "https://www.googleapis.com/auth/youtube",
+              "https://www.googleapis.com/auth/youtube.force-ssl",
+          ]
+          try:
+              print("Loading Google credentials...")
+              creds = Credentials.from_authorized_user_file(
+                  "token.json",
+                  SCOPES
+              )
+              if not creds:
+                  print("ERROR: Could not create credentials.")
+                  sys.exit(1)
+              if creds.refresh_token:
+                  print("Refreshing Google access token...")
+                  creds.refresh(Request())
+                  refreshed_data = json.loads(
+                      creds.to_json()
+                  )
+                  with open("token.json", "w") as f:
+                      json.dump(
+                          refreshed_data,
+                          f,
+                          separators=(",", ":")
+                      )
+                  print("Google token refreshed successfully.")
+              else:
+                  print(
+                      "WARNING: No refresh token found."
+                  )
+              print("Connecting to YouTube API...")
+              youtube = build(
+                  "youtube",
+                  "v3",
+                  credentials=creds
+              )
+              response = (
+                  youtube.channels()
+                  .list(
+                      part="snippet,statistics",
+                      mine=True
+                  )
+                  .execute()
+              )
+              channels = response.get("items", [])
+              if not channels:
+                  print(
+                      "ERROR: No YouTube channel found "
+                      "for this Google account."
+                  )
+                  sys.exit(1)
+              channel = channels[0]
+              print("")
+              print("==========================================")
+              print("YOUTUBE ACCOUNT")
+              print("==========================================")
+              print(
+                  f"Channel: "
+                  f"{channel['snippet']['title']}"
+              )
+              print(
+                  f"Videos: "
+                  f"{channel['statistics'].get('videoCount')}"
+              )
+              print(
+                  f"Subscribers: "
+                  f"{channel['statistics'].get('subscriberCount')}"
+              )
+              print("==========================================")
+              print("YouTube authentication successful.")
+          except Exception as e:
+              print("")
+              print("ERROR: YouTube authentication failed.")
+              print(f"Error: {e}")
+              sys.exit(1)
+          PYEOF
+
+      # ============================================================
+      # 10. CHECK UPLOAD LOG
+      # ============================================================
+      - name: Check if today's video already uploaded
+        id: check
+        continue-on-error: true
+        shell: bash
+        env:
+          TEST_MODE: ${{ inputs.test_mode }}
+        run: |
+          set -euo pipefail
+          python3 << 'PYEOF'
+          import json
+          import os
+          import sys
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          LOG_FILE = "upload_log.json"
+          IST = ZoneInfo("Asia/Kolkata")
+          today_str = (
+              datetime.now(IST)
+              .date()
+              .isoformat()
+          )
+          print("==========================================")
+          print("DAILY UPLOAD CHECK")
+          print("==========================================")
+          print(f"IST date: {today_str}")
+          # A test_mode run never uploads, so it can't create a duplicate -
+          # let it through even when today's real video already exists
+          # (otherwise you can't dry-run on a day the video went out).
+          if os.environ.get("TEST_MODE", "").strip().lower() == "true":
+              print("TEST MODE: skipping the duplicate check (nothing will be uploaded).")
+              sys.exit(0)
+          if not os.path.exists(LOG_FILE):
+              print(
+                  "upload_log.json does not exist."
+              )
+              print(
+                  "This will be treated as the first upload."
+              )
+              sys.exit(0)
+          try:
+              with open(LOG_FILE, "r") as f:
+                  logs = json.load(f)
+          except Exception as e:
+              print(
+                  f"ERROR: Could not read {LOG_FILE}"
+              )
+              print(f"Error: {e}")
+              sys.exit(1)
+          if not isinstance(logs, list):
+              print(
+                  "ERROR: upload_log.json must contain "
+                  "a JSON list."
+              )
+              sys.exit(1)
+          # A test_mode run (test_mode: true) never actually uploads to
+          # YouTube - it still writes a log entry (so day-numbering keeps
+          # working) but that entry must NOT count as "today's real video"
+          # here, or a manual test run blocks the real scheduled upload
+          # for the rest of that same day. Only a non-test entry counts.
+          already_uploaded = any(
+              isinstance(entry, dict)
+              and entry.get("date") == today_str
+              and not entry.get("test_mode", False)
+              for entry in logs
+          )
+          if already_uploaded:
+              print("")
+              print(
+                  f"SKIP: A REAL video is already recorded "
+                  f"for {today_str}."
+              )
+              print(
+                  "No duplicate upload will be performed."
+              )
+              sys.exit(1)
+          test_entries_today = [
+              entry for entry in logs
+              if isinstance(entry, dict)
+              and entry.get("date") == today_str
+              and entry.get("test_mode", False)
+          ]
+          if test_entries_today:
+              print("")
+              print(
+                  f"Note: {len(test_entries_today)} test_mode run(s) "
+                  f"already logged for {today_str} - ignored for this "
+                  f"check, proceeding normally."
+              )
+          print("")
+          print(
+              f"No upload found for {today_str}."
+          )
+          print(
+              "Proceeding with today's video..."
+          )
+          print("==========================================")
+          PYEOF
+
+      # ============================================================
+      # 11. RUN DEVOPS BOT
+      # ============================================================
+      - name: Run YouTube automation
+        if: steps.check.outcome == 'success'
+        shell: bash
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # ---- v3.3.0: AI presenter on a free Kaggle GPU (Phase 2) ----
+          # Leave these secrets unset and the bot simply skips the presenter.
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          USE_AI_HOST: ${{ inputs.use_ai_host }}
+          HOST_MODE_INPUT: ${{ inputs.host_mode }}
+          HOST_IMAGE: "assets/host.png"
+          HOST_TIMEOUT_MIN: "45"
+          HOST_MAX_SECONDS: "240"
+          HOST_FACE_SIZE: "256"
+          HOST_ENHANCER: "gfpgan"
+          # ---- v3.3.0: voice + captions + script ----
+          KOKORO_VOICE: "am_michael"
+          KOKORO_SPEED: "1.0"
+          KOKORO_MODEL_DIR: "models/kokoro"
+          BURN_CAPTIONS: "true"
+          SCRIPT_REVIEW: "true"
+          STORIES_FILE: "stories.yaml"
+          # auto = declare "altered or synthetic content" whenever the AI presenter is in the video
+          SYNTHETIC_MEDIA_DISCLOSURE: "auto"
+          # Passed as a SEPARATE name (not ELEVENLABS_API_KEY directly) and
+          # resolved in bash below. An earlier version of this workflow used
+          # a GitHub Actions expression ternary here
+          # ( cond && '' || secrets.X ) to blank the key when use_free_voice
+          # was true - that is broken, because '' is falsy in Actions
+          # expressions, so `'' || secrets.X` always evaluated back to the
+          # real secret regardless of the toggle. That bug shipped real
+          # ElevenLabs credit usage on a run that was supposed to be free
+          # (~25,000 characters spent on run #198). Doing the branch in bash
+          # instead avoids this class of bug entirely.
+          ELEVENLABS_API_KEY_SECRET: ${{ secrets.ELEVENLABS_API_KEY }}
+          # OPTIONAL second (free-plan) ElevenLabs account. If this secret exists
+          # its credits are used FIRST; when they run out (or the account is
+          # blocked) the bot switches to the paid key above, and only then to
+          # the free edge_tts voice. Leave the secret unset = paid-only.
+          ELEVENLABS_API_KEY_FREE_SECRET: ${{ secrets.ELEVENLABS_API_KEY_FREE }}
+          # v3.2.0: ElevenLabs is OPT-IN per run (input use_elevenlabs).
+          # Scheduled runs never touch it - YouTube Analytics showed no
+          # retention gain over edge_tts, and an empty quota used to cost
+          # the run time. The secrets can stay or be deleted; unused either way.
+          USE_ELEVENLABS: ${{ inputs.use_elevenlabs }}
+          # Tried in order when generating the script; one overloaded
+          # model (503) no longer forces the generic offline script.
+          # 2.5 models return 404 "no longer available to new users" (run #254);
+          # names below are the replacements Google's own error message points to.
+          GEMINI_MODELS: "gemini-flash-latest,gemini-flash-lite-latest,gemini-3.8-flash,gemini-3.5-flash-lite,gemini-pro-latest"
+          # Hard cap on script length (~12 min of narration).
+          SCRIPT_MAX_WORDS: "2500"
+          SERIES_PLAYLIST_ID: ${{ secrets.SERIES_PLAYLIST_ID }}
+          # REVERTED from eleven_multilingual_v2 - see SETUP_NOTES.md 13.
+          # Real usage data from this account's ElevenLabs dashboard
+          # (7-day window, Turbo v2.5) showed ~0.25 credits consumed per
+          # character - a real, meaningfully better rate than 1:1. Whether
+          # eleven_multilingual_v2 gets that same discount on API/subscription
+          # usage is NOT clearly documented by ElevenLabs (their docs are
+          # ambiguous / contradictory on this specific point), so switching
+          # could have silently ~doubled real credit consumption per video.
+          # Staying on eleven_flash_v2_5 - same discounted API tier as
+          # Turbo (confirmed by the real dashboard numbers above), and it's
+          # ElevenLabs' actively-supported model (eleven_turbo_v2_5, the
+          # previous default, is now deprecated).
+          ELEVENLABS_MODEL_ID: "eleven_flash_v2_5"
+          # Hour (IST, 0-23) YouTube makes the video public. "off" = publish
+          # immediately on upload.
+          PUBLISH_AT_IST_HOUR: "21"
+          EXPECTED_CHANNEL_HANDLE: "devopsgeniuszone"
+          YOUTUBE_TARGET_AUDIENCE: "US"
+          CONTENT_LANGUAGE: "en-US"
+          TZ: "Asia/Kolkata"
+        run: |
+          set -euo pipefail
+          DAY="${{ inputs.day_override }}"
+          TEST="${{ inputs.test_mode }}"
+          FLAGS=""
+          if [ "$TEST" = "true" ]; then
+            FLAGS="--test"
+          fi
+          if [ -n "$DAY" ]; then
+            FLAGS="${FLAGS} ${DAY}"
+          fi
+
+          # Bash-side branch (see comment above on env: block for why this
+          # is not a GitHub Actions expression ternary).
+          if [ "${USE_ELEVENLABS:-false}" = "true" ]; then
+            export TTS_PROVIDER="elevenlabs"
+            export ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY_SECRET:-}"
+            export ELEVENLABS_API_KEY_FREE="${ELEVENLABS_API_KEY_FREE_SECRET:-}"
+            VOICE_ENGINE="ElevenLabs (opt-in this run), then edge_tts"
+          else
+            export TTS_PROVIDER="kokoro"
+            export ELEVENLABS_API_KEY=""
+            export ELEVENLABS_API_KEY_FREE=""
+            VOICE_ENGINE="Kokoro ${KOKORO_VOICE} (free, offline), edge_tts fallback"
+          fi
+
+          # Scheduled runs have no inputs -> presenter ON, key mode.
+          if [ "${USE_AI_HOST:-true}" = "false" ]; then
+            export HOST_ENABLED="false"
+          else
+            export HOST_ENABLED="true"
+          fi
+          export HOST_MODE="${HOST_MODE_INPUT:-key}"
+          unset ELEVENLABS_API_KEY_SECRET ELEVENLABS_API_KEY_FREE_SECRET
+
+          echo "=========================================="
+          echo "DEVOPS GENIUS ZONE AUTOMATION"
+          echo "=========================================="
+          echo "Event:"
+          echo "${{ github.event_name }}"
+          echo ""
+          echo "Channel:"
+          echo "@devopsgeniuszone"
+          echo ""
+          echo "Target audience:"
+          echo "US"
+          echo ""
+          echo "Language:"
+          echo "en-US"
+          echo ""
+          echo "IST:"
+          TZ=Asia/Kolkata date
+          echo ""
+          echo "Day override:"
+          echo "${DAY:-automatic}"
+          echo ""
+          echo "Test mode:"
+          echo "${TEST:-false}"
+          echo ""
+          echo "Voice engine:"
+          echo "$VOICE_ENGINE"
+          echo ""
+          echo "AI presenter:"
+          if [ "$HOST_ENABLED" = "true" ] && [ -f "$HOST_IMAGE" ] && [ -n "${KAGGLE_USERNAME:-}" ]; then
+            echo "on (mode=$HOST_MODE, Kaggle user set, $HOST_IMAGE present)"
+          else
+            echo "off or not configured (enabled=$HOST_ENABLED, image=$( [ -f "$HOST_IMAGE" ] && echo yes || echo missing ), kaggle_user=$( [ -n "${KAGGLE_USERNAME:-}" ] && echo set || echo missing ))"
+          fi
+          echo ""
+          echo "Flags:"
+          echo "${FLAGS:-none}"
+          echo "=========================================="
+          python3 devops_365_bot.py $FLAGS
+
+      # ============================================================
+      # 12. VERIFY OUTPUT
+      # ============================================================
+      - name: Verify generated output
+        if: steps.check.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=========================================="
+          echo "VERIFYING OUTPUT"
+          echo "=========================================="
+          if [ "${{ steps.libreoffice.outcome }}" != "success" ]; then
+            echo "⚠ LibreOffice install did not succeed - Pillow fallback slides were used"
+          fi
+          if [ -f "devops_output/video.mp4" ]; then
+            echo "✓ video.mp4 found"
+          else
+            echo "⚠ video.mp4 not found"
+          fi
+          if [ -f "devops_output/thumbnail.jpg" ]; then
+            echo "✓ thumbnail.jpg found"
+          else
+            echo "⚠ thumbnail.jpg not found"
+          fi
+          if ls devops_output/slides/*.pptx >/dev/null 2>&1; then
+            echo "✓ .pptx slide deck found"
+          else
+            echo "⚠ .pptx slide deck not found (pipeline likely fell back to Pillow slides — check the run log for [SLIDES] messages)"
+          fi
+          if [ -f "devops_output/captions_en.srt" ]; then
+            echo "✓ captions_en.srt found"
+          else
+            echo "⚠ captions_en.srt not found"
+          fi
+          if [ -f "upload_log.json" ]; then
+            python3 -c "import json;e=json.load(open('upload_log.json'))[-1];print('  voice=%s terminal_scenes=%s presenter_seconds=%s burned_captions=%s synthetic_disclosure=%s' % (e.get('tts_engine'),e.get('terminal_scenes'),e.get('host_seconds'),e.get('burned_captions'),e.get('contains_synthetic_media')))" || true
+          fi
+          if [ -f "upload_log.json" ]; then
+            echo "✓ upload_log.json found"
+          else
+            echo "⚠ upload_log.json not found"
+          fi
+          echo "=========================================="
+
+      # ============================================================
+      # 13. UPLOAD ARTIFACTS
+      # ============================================================
+      - name: Save output artifacts
+        if: steps.check.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: "video-day-${{ github.run_number }}"
+          path: |
+            devops_output/video.mp4
+            upload_log.json
+            devops_output/thumbnail.jpg
+            devops_output/captions_en.srt
+          if-no-files-found: warn
+          retention-days: 7
+
+      # ============================================================
+      # 14. UPLOAD SLIDE DECK (the real, editable .pptx — v3.1.0)
+      # ============================================================
+      - name: Save slide deck artifact
+        if: steps.check.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: "slides-day-${{ github.run_number }}"
+          path: devops_output/slides/*.pptx
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ============================================================
+      # 15. COMMIT UPLOAD LOG
+      # ============================================================
+      - name: Commit upload log to repository
+        if: steps.check.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=========================================="
+          echo "COMMITTING UPLOAD LOG"
+          echo "=========================================="
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -f "upload_log.json" ]; then
+            echo "ERROR: upload_log.json does not exist."
+            exit 1
+          fi
+          git add upload_log.json
+          if git diff --cached --quiet; then
+            echo "No changes to upload_log.json."
+            exit 0
+          fi
+          # REMOVED [skip ci] so the cron job doesn't pause after 60 days
+          git commit \
+            -m "Update upload log"
+          git push origin "HEAD:${{ github.ref_name }}"
+          echo ""
+          echo "Upload log committed successfully."
+          echo "=========================================="
