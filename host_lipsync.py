@@ -146,6 +146,35 @@ def _push_kernel(folder: Path, user: str, ds_id: str, run_id: str, timeout_sec: 
     return k_id
 
 
+def _kernel_log_tail(k_id: str, n: int = 60) -> str:
+    """Last lines of the Kaggle kernel's own execution log (the real error
+    is only visible there). Handles the JSON-event and plain-text formats."""
+    try:
+        raw = _kaggle(["kernels", "logs", k_id], timeout=180, check=False)
+    except Exception as exc:
+        return f"(could not fetch the Kaggle log: {exc})"
+    lines = []
+    txt = raw.strip()
+    try:
+        data = json.loads(txt)
+        if isinstance(data, list):
+            for ev in data:
+                if isinstance(ev, dict):
+                    lines.extend(str(ev.get("data", "")).splitlines())
+    except ValueError:
+        for ln in txt.splitlines():
+            ln = ln.strip()
+            if ln.startswith("{") and '"data"' in ln:
+                try:
+                    lines.extend(str(json.loads(ln.rstrip(",")).get("data", "")).splitlines())
+                    continue
+                except ValueError:
+                    pass
+            lines.append(ln)
+    lines = [l for l in lines if l.strip() and "it/s]" not in l and "%|" not in l]
+    return "\n".join(lines[-n:]) or "(Kaggle returned an empty log)"
+
+
 def _wait_kernel(k_id: str, deadline: float):
     time.sleep(30)
     last = ""
@@ -159,7 +188,12 @@ def _wait_kernel(k_id: str, deadline: float):
         if "complete" in st:
             return
         if "error" in st or "cancel" in st:
-            raise RuntimeError(f"Kaggle kernel ended with '{st}': {out.strip()[-600:]}")
+            tail = _kernel_log_tail(k_id)
+            print("[HOST] ---- Kaggle kernel log (last lines) ----", flush=True)
+            print(tail, flush=True)
+            print("[HOST] ---------------------------------------", flush=True)
+            last = [l for l in tail.splitlines() if l.strip()][-1:] or [""]
+            raise RuntimeError(f"Kaggle kernel ended with '{st}'. Last log line: {last[0][:400]}")
         time.sleep(30)
     raise TimeoutError("Kaggle kernel did not finish in time")
 
