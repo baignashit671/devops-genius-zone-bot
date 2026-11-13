@@ -192,7 +192,9 @@ def _wait_kernel(k_id: str, deadline: float):
             print("[HOST] ---- Kaggle kernel log (last lines) ----", flush=True)
             print(tail, flush=True)
             print("[HOST] ---------------------------------------", flush=True)
-            last = [l for l in tail.splitlines() if l.strip()][-1:] or [""]
+            lines = [l for l in tail.splitlines() if l.strip()]
+            key = [l for l in lines if "FATAL" in l or "Error:" in l or "error" in l.lower() and "NbConvert" not in l]
+            last = key[-1:] or lines[-1:] or [""]
             raise RuntimeError(f"Kaggle kernel ended with '{st}'. Last log line: {last[0][:400]}")
         time.sleep(30)
     raise TimeoutError("Kaggle kernel did not finish in time")
