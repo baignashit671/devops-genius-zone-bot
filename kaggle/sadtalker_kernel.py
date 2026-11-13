@@ -45,6 +45,7 @@ CKPT_URLS = {
 PIP_PACKAGES = [
     "face_alignment", "imageio>=2.31", "imageio-ffmpeg>=0.5", "librosa", "resampy", "pydub",
     "kornia", "yacs", "basicsr", "facexlib", "gfpgan", "av", "safetensors", "joblib", "scikit-image",
+    "audioop-lts; python_version >= '3.13'",   # Python 3.13 removed audioop; pydub needs it (Kaggle is on 3.13)
 ]
 
 

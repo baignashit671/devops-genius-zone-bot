@@ -98,9 +98,20 @@ def generate():
     from PIL import Image, ImageDraw
 
     log(f"loading {MODEL} (first run downloads ~7 GB)")
-    pipe = StableDiffusionXLPipeline.from_pretrained(MODEL, torch_dtype=torch.float16, variant="fp16",
-                                                     use_safetensors=True).to("cuda")
-    pipe.enable_vae_slicing()
+    kw = dict(variant="fp16", use_safetensors=True)
+    try:   # diffusers >= 0.4x renamed torch_dtype -> dtype
+        pipe = StableDiffusionXLPipeline.from_pretrained(MODEL, dtype=torch.float16, **kw)
+    except TypeError:
+        pipe = StableDiffusionXLPipeline.from_pretrained(MODEL, torch_dtype=torch.float16, **kw)
+    pipe = pipe.to("cuda")
+    # VAE slicing only saves memory at decode time; the API moved between
+    # diffusers versions (0.42 removed pipe.enable_vae_slicing), so it's optional.
+    for fn in (lambda: pipe.vae.enable_slicing(), lambda: pipe.enable_vae_slicing()):
+        try:
+            fn()
+            break
+        except Exception:
+            continue
     files = []
     for k in range(COUNT):
         seed = 1000 + k * 7919
