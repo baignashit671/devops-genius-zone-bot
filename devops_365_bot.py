@@ -394,7 +394,14 @@ GEMINI_MODELS = [
 ]
 GEMINI_MODELS = list(dict.fromkeys(GEMINI_MODELS))  # de-dupe, keep order
 GEMINI_MAX_RETRIES = int(os.environ.get("GEMINI_MAX_RETRIES", "2"))  # per model
-GEMINI_TIMEOUT_SEC = int(os.environ.get("GEMINI_TIMEOUT_SEC", "120"))
+# 300 (was 120): the v3.3.0 incident-format script (~2,000 words + terminal
+# blocks, JSON) regularly needs >2 min on busy days - run #4 got
+# 504 DEADLINE_EXCEEDED at exactly the old 120 s limit on every model.
+GEMINI_TIMEOUT_SEC = int(os.environ.get("GEMINI_TIMEOUT_SEC", "300"))
+# If every model fails (503 "high demand" spikes are short), wait and run
+# the whole model chain again before falling back to the offline script.
+GEMINI_CHAIN_PASSES = int(os.environ.get("GEMINI_CHAIN_PASSES", "2"))
+GEMINI_CHAIN_WAIT_SEC = int(os.environ.get("GEMINI_CHAIN_WAIT_SEC", "90"))
 
 # YouTube upload limits (leave a safety margin for commas)
 MAX_YOUTUBE_TAGS = 25
@@ -1642,7 +1649,7 @@ JSON FORMAT:
                     print(f"[AI] {model} is unavailable for this key - trying the next model.")
                     break
                 if attempt < GEMINI_MAX_RETRIES:
-                    wait = 6 * attempt
+                    wait = (20 if re.search(r"\b(503|504)\b|UNAVAILABLE|DEADLINE", msg) else 6) * attempt
                     print(f"[AI] Retrying {model} in {wait}s...")
                     time.sleep(wait)
         else:
@@ -1955,10 +1962,19 @@ def generate_content(topic: str, day_num: int, next_topic: str = "") -> dict:
     if HAS_GEMINI and os.environ.get("GEMINI_API_KEY"):
         try:
             print(f"[AI] Gemini models (in order): {', '.join(GEMINI_MODELS)}")
-            data = generate_with_gemini(topic, day_num, next_topic)
+            for chain_pass in range(1, max(1, GEMINI_CHAIN_PASSES) + 1):
+                try:
+                    data = generate_with_gemini(topic, day_num, next_topic)
+                    break
+                except Exception as exc:
+                    if chain_pass >= max(1, GEMINI_CHAIN_PASSES) or re.search(r"API key|PERMISSION_DENIED|INVALID_ARGUMENT", str(exc)):
+                        raise
+                    print(f"[AI] Every model failed on pass {chain_pass} ({str(exc)[:160]}) - waiting "
+                          f"{GEMINI_CHAIN_WAIT_SEC}s and trying the whole chain again.")
+                    time.sleep(GEMINI_CHAIN_WAIT_SEC)
             print(f"[AI] Gemini generation successful ({data.get('_source')}).")
         except Exception as exc:
-            print(f"[AI] Gemini failed: {exc} - using offline generator.")
+            print(f"[AI] Gemini failed: {str(exc)[:300]} - using offline generator (old-style script, no terminal scenes).")
     else:
         print("[AI] Gemini is not configured - using offline generator.")
 
@@ -4351,17 +4367,20 @@ def _compose_final(temp_video: Path, audio_path: Path, output_video: Path, overl
         parts.append(f"[{base}]null[vout]")
     inputs += ["-i", str(audio_path)]
     audio_idx = n_in
-    graph = OUTPUT_DIR / "compose_graph.txt"
-    graph.write_text(";\n".join(parts), encoding="utf-8")
-    cmd = ["ffmpeg", "-y"] + inputs + [
-        "-filter_complex_script", str(graph), "-map", "[vout]", "-map", f"{audio_idx}:a:0",
+    # Graph is passed INLINE: FFmpeg master (the BtbN "latest" build the
+    # workflow installs) removed -filter_complex_script (Nov 2026), and the
+    # new "-/filter_complex file" syntax doesn't exist in older releases.
+    graph = ";".join(parts)
+    (OUTPUT_DIR / "compose_graph.txt").write_text(graph.replace(";", ";\n"), encoding="utf-8")  # kept for debugging
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"] + inputs + [
+        "-filter_complex", graph, "-map", "[vout]", "-map", f"{audio_idx}:a:0",
         "-r", str(RENDER_FPS), "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "fast", "-crf", "21",
         "-c:a", "aac", "-b:a", "192k", "-shortest", str(output_video),
     ]
     res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     if res.returncode != 0:
-        raise RuntimeError(f"final compose failed: {res.stderr[-1500:]}")
-    graph.unlink(missing_ok=True)
+        raise RuntimeError(f"final compose failed: {res.stderr.strip()[-1500:]}")
+    (OUTPUT_DIR / "compose_graph.txt").unlink(missing_ok=True)
 
 
 def build_video(slides: list, audio_path: Path, output_video: Path, day_num: int = 0, topic: str = "",
@@ -4505,14 +4524,14 @@ def build_video(slides: list, audio_path: Path, output_video: Path, day_num: int
         extras["burned_captions"] = bool(ass_path)
     except Exception as exc:
         # Never lose the day's video over an overlay: retry captions-only, then plain mux.
-        print(f"[VIDEO] {str(exc)[:800]}")
+        print(f"[VIDEO] {str(exc)[-1500:]}")
         print("[VIDEO] Retrying the final pass without overlays...")
         extras.update({"terminal_scenes": 0, "host_segments": 0, "host_seconds": 0.0})
         try:
             _compose_final(temp_video, audio_path, output_video, [], ass_path)
             extras["burned_captions"] = bool(ass_path)
         except Exception as exc2:
-            print(f"[VIDEO] Captions pass failed too ({str(exc2)[:300]}) - plain mux.")
+            print(f"[VIDEO] Captions pass failed too ({str(exc2)[-800:]}) - plain mux.")
             _compose_final(temp_video, audio_path, output_video, [], None)
             extras["burned_captions"] = False
 
