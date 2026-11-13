@@ -212,6 +212,12 @@ def main():
     try:
         input_dir = find_input_dir()
         if not SKIP_SETUP:
+            import urllib.request
+            try:
+                urllib.request.urlopen("https://github.com", timeout=20).read(64)
+            except Exception as exc:
+                raise RuntimeError(f"No internet in this Kaggle session ({exc}). Kaggle enables internet only "
+                                   "for phone-verified accounts: kaggle.com -> Settings -> Phone verification.")
             setup()
         apply_patches()
         done, errors = render(input_dir)
