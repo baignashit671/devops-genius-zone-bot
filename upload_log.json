@@ -2263,5 +2263,41 @@
     "burned_captions": true,
     "contains_synthetic_media": false,
     "test_mode": true
+  },
+  {
+    "day": 56,
+    "series": "ai-in-devops-2026",
+    "date": "2026-11-14",
+    "topic": "Docker Explained in 10 Minutes \u2014 The Ultimate Beginner Guide",
+    "title": "Fix Docker Container Exit Codes Fast",
+    "video_id": "Lhubx3QEclA",
+    "url": "https://youtube.com/watch?v=Lhubx3QEclA",
+    "duration_min": 9.8,
+    "word_count": 1269,
+    "tags": [
+      "devops",
+      "devops engineer",
+      "cloud computing",
+      "aws",
+      "kubernetes",
+      "docker",
+      "cicd",
+      "terraform",
+      "github actions",
+      "learn devops",
+      "devops tutorial",
+      "devops career",
+      "tech career usa",
+      "devops 2026"
+    ],
+    "ai_generated": true,
+    "content_source": "gemini:gemini-3.5-flash-lite",
+    "tts_engine": "kokoro",
+    "slides_engine": "pptx",
+    "terminal_scenes": 4,
+    "host_seconds": 0.0,
+    "burned_captions": true,
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
