@@ -1,0 +1,34 @@
+[
+  {
+    "date": "2026-11-16",
+    "slot": 0,
+    "index": 0,
+    "format": "ROADMAP",
+    "area": "Kubernetes",
+    "title": "The exact Kubernetes roadmap US hiring managers want",
+    "video_id": "TEST_MODE_NO_UPLOAD",
+    "url": null,
+    "duration_sec": 40.4,
+    "host": false,
+    "terminal_scenes": 0,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": true
+  },
+  {
+    "date": "2026-11-16",
+    "slot": 1,
+    "index": 1,
+    "format": "TOP_N",
+    "area": "Linux for DevOps",
+    "title": "4 Linux Commands Senior DevOps Engineers Use Daily",
+    "video_id": "TEST_MODE_NO_UPLOAD",
+    "url": null,
+    "duration_sec": 32.4,
+    "host": false,
+    "terminal_scenes": 4,
+    "content_source": "gemini:gemini-3.5-flash-lite",
+    "contains_synthetic_media": false,
+    "test_mode": true
+  }
+]
