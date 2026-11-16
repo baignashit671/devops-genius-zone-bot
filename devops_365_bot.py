@@ -1312,7 +1312,16 @@ def get_authenticated_service():
             raise RuntimeError(
                 "Google credentials are expired and have no refresh token."
             )
-        credentials.refresh(Request())
+        try:
+            credentials.refresh(Request())
+        except Exception as exc:
+            if "invalid_scope" in str(exc):
+                raise RuntimeError(
+                    "Google refresh failed with invalid_scope: the GOOGLE_CREDENTIALS token was not granted "
+                    "all YouTube permissions. Run reauth_youtube.py, tick every permission on the consent "
+                    "screen, and update the GOOGLE_CREDENTIALS secret."
+                ) from exc
+            raise
         TOKEN_FILE.write_text(credentials.to_json(), encoding="utf-8")
 
     service = build(
@@ -4823,32 +4832,64 @@ def _srt_timestamp(seconds: float) -> str:
     return f"{hh:02d}:{mm:02d}:{ss:02d},{ms:03d}"
 
 
-def build_captions_srt(slides: list, output_path: Path) -> Path:
-    """Real English closed captions built from the exact same slide
-    timeline as the video (slides = [(kind, text, duration, act_name),
-    ...] from generate_synced_narration()) - one cue per spoken slide,
-    timed to the real audio. This is segment-level accuracy (one cue per
-    slide's narration chunk, a few seconds to ~15s each), not word-level
-    karaoke-style timing - ElevenLabs' character timestamps aren't
-    retained past duration computation, only the per-slide durations
-    are. That's still meaningfully more accurate than YouTube's own
-    auto-captions (which mishear technical/DevOps terms constantly) and
-    it's free since we already have the real timing. Structural
-    (silent) slides - title/chapter/cta/outro - have no speech, so they
-    get no cue.
-    """
-    cues = []
+def _timed_caption_groups(slides: list, max_chars: int, max_words: int):
+    """Yield (start, end, [(word, w_start, w_end), ...]) caption groups for
+    every spoken slide. Each slide's exact audio duration is split across its
+    words by length (+ pauses after punctuation); groups end at sentence ends
+    or when they reach max_chars / max_words."""
     t = 0.0
-    idx = 1
-    for kind, text, duration, act_name in slides:
+    for kind, text, dur, act in slides:
         clean = re.sub(r"\s+", " ", text or "").strip()
-        if kind in SPOKEN_SLIDE_KINDS and clean and duration > 0:
-            start = _srt_timestamp(t)
-            end = _srt_timestamp(t + duration)
-            cues.append(f"{idx}\n{start} --> {end}\n{clean}\n")
-            idx += 1
-        t += duration
+        if kind in SPOKEN_SLIDE_KINDS and clean and dur > 0.3:
+            words = clean.split(" ")
+            weights = [len(w) + 2 + (4 if re.search(r"[.!?]$", w) else 2 if re.search(r"[,;:]$", w) else 0) for w in words]
+            speak = max(0.1, dur - 0.25)
+            total_w = float(sum(weights)) or 1.0
+            timed, cur = [], t + 0.05
+            for w_, wt in zip(words, weights):
+                d = speak * wt / total_w
+                timed.append((w_, cur, cur + d))
+                cur += d
+            grp = []
+            for item in timed:
+                if grp and (len(grp) >= max_words or len(" ".join(x[0] for x in grp + [item])) > max_chars):
+                    yield grp[0][1], grp[-1][2], grp
+                    grp = []
+                grp.append(item)
+                if re.search(r"[.!?]$", item[0]):
+                    yield grp[0][1], grp[-1][2], grp
+                    grp = []
+            if grp:
+                yield grp[0][1], grp[-1][2], grp
+        t += dur
 
+
+def _two_lines(text: str, width: int = 42) -> str:
+    if len(text) <= width:
+        return text
+    words, best = text.split(" "), None
+    for i in range(1, len(words)):
+        l1, l2 = " ".join(words[:i]), " ".join(words[i:])
+        score = max(len(l1), len(l2))
+        if best is None or score < best[0]:
+            best = (score, l1, l2)
+    return f"{best[1]}\n{best[2]}"
+
+
+def build_captions_srt(slides: list, output_path: Path) -> Path:
+    """English closed captions for YouTube, built from the exact slide/audio
+    timeline. v3.3.1: short cues (max 2 lines x ~42 characters, ending at
+    sentence boundaries) with word-level timing inside each slide, instead of
+    one long cue per slide - long cues covered a third of the player.
+    Structural (silent) slides get no cue."""
+    cues = []
+    prev_end = 0.0
+    for idx, (start, end, grp) in enumerate(_timed_caption_groups(slides, max_chars=84, max_words=16), 1):
+        start = max(start, prev_end)
+        end = max(end, start + 0.8)  # readable minimum
+        text = _two_lines(" ".join(w for w, _, _ in grp))
+        cues.append(f"{idx}\n{_srt_timestamp(start)} --> {_srt_timestamp(end)}\n{text}\n")
+        prev_end = end
     output_path.write_text("\n".join(cues), encoding="utf-8")
     return output_path
 
