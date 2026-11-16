@@ -167,7 +167,11 @@ Return ONLY this JSON:
 }}
 """
     last_exc = None
-    for model in core.GEMINI_MODELS:
+    chain = [m for _ in range(max(1, core.GEMINI_CHAIN_PASSES)) for m in core.GEMINI_MODELS]
+    for pos, model in enumerate(chain):
+        if pos and pos % len(core.GEMINI_MODELS) == 0:
+            log(f"every model failed once - waiting {core.GEMINI_CHAIN_WAIT_SEC}s, then trying the whole chain again")
+            time.sleep(core.GEMINI_CHAIN_WAIT_SEC)
         for attempt in range(1, 3):
             try:
                 log(f"Gemini {model} ({fmt} / {area}) attempt {attempt}")
@@ -189,7 +193,7 @@ Return ONLY this JSON:
                 log(f"{model} failed: {msg[:200]}")
                 if re.search(r"\b404\b|NOT_FOUND|not found", msg):
                     break
-                time.sleep(10 * attempt)
+                time.sleep((20 if re.search(r"\b(503|504)\b|UNAVAILABLE|DEADLINE", msg) else 10) * attempt)
     raise RuntimeError(f"all Gemini models failed: {last_exc}")
 
 
