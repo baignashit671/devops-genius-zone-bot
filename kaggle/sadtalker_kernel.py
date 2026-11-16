@@ -44,9 +44,12 @@ CKPT_URLS = {
 }
 PIP_PACKAGES = [
     "face_alignment", "imageio>=2.31", "imageio-ffmpeg>=0.5", "librosa", "resampy", "pydub",
-    "kornia", "yacs", "basicsr", "facexlib", "gfpgan", "av", "safetensors", "joblib", "scikit-image",
+    "kornia", "yacs", "av", "safetensors", "joblib", "scikit-image",
     "audioop-lts; python_version >= '3.13'",   # Python 3.13 removed audioop; pydub needs it (Kaggle is on 3.13)
 ]
+# Installed AFTER basicsr (gfpgan requires it; SadTalker always imports gfpgan).
+FACE_PACKAGES = ["facexlib", "gfpgan"]
+BASICSR_SDIST = "https://files.pythonhosted.org/packages/source/b/basicsr/basicsr-1.4.2.tar.gz"
 
 
 def log(msg):
@@ -75,10 +78,51 @@ def find_input_dir():
 
 
 # ---------------------------------------------------------------- setup
+def install_basicsr():
+    """basicsr 1.4.2 ships only as a source package and its setup.py reads the
+    version via exec() + locals()['__version__']. Python 3.13 (PEP 667) broke
+    that pattern -> 'KeyError: __version__' -> "Failed to build 'basicsr'".
+    Build a copy with that one function fixed."""
+    py = sys.executable
+    if subprocess.run([py, "-c", "import basicsr"], capture_output=True).returncode == 0:
+        log("basicsr already installed")
+        return
+    if subprocess.run([py, "-m", "pip", "install", "-q", "basicsr"]).returncode == 0:
+        return
+    log("basicsr build failed (Python 3.13 locals() change) - installing a patched copy")
+    import tarfile
+    work = "/tmp/basicsr_src"
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work)
+    tgz = os.path.join(work, "basicsr.tar.gz")
+    sh(["curl", "-sSL", "--retry", "3", "-o", tgz, BASICSR_SDIST])
+    with tarfile.open(tgz) as tf:
+        try:
+            tf.extractall(work, filter="data")
+        except TypeError:  # Python without extraction filters
+            tf.extractall(work)
+    src = next(d for d in glob.glob(os.path.join(work, "basicsr-*")) if os.path.isdir(d))
+    setup_py = os.path.join(src, "setup.py")
+    code = open(setup_py).read()
+    bad = "exec(compile(f.read(), version_file, 'exec'))\n    return locals()['__version__']"
+    good = "ns = {}\n        exec(compile(f.read(), version_file, 'exec'), ns)\n    return ns['__version__']"
+    if bad not in code:
+        raise RuntimeError("basicsr setup.py changed upstream - patch no longer matches")
+    code = code.replace(bad, good)
+    # setup_requires=['cython','numpy','torch'] makes pip download a second
+    # multi-GB torch into the build sandbox; nothing is compiled (BASICSR_EXT
+    # unset), so drop it.
+    code = code.replace("setup_requires=['cython', 'numpy', 'torch'],", "")
+    open(setup_py, "w").write(code)
+    sh([py, "-m", "pip", "install", "-q", src])
+
+
 def setup():
     if not os.path.isdir(SADTALKER_DIR):
         sh(["git", "clone", "--depth", "1", REPO, SADTALKER_DIR])
     sh([sys.executable, "-m", "pip", "install", "-q", *PIP_PACKAGES])
+    install_basicsr()
+    sh([sys.executable, "-m", "pip", "install", "-q", *FACE_PACKAGES])
     for rel, url in CKPT_URLS.items():
         if HOST_SIZE != 512 and "512" in rel:
             continue
