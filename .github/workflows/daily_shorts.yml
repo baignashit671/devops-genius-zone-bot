@@ -73,6 +73,12 @@ jobs:
           path: models/kokoro
           key: kokoro-onnx-model-v1.0
 
+      - name: Cache thumbnail cut-out model
+        uses: actions/cache@v4
+        with:
+          path: models/u2net
+          key: u2net-human-seg-v1
+
       - name: Install Python packages
         shell: bash
         run: |
@@ -137,6 +143,7 @@ jobs:
           path: |
             shorts_output/short_*.mp4
             shorts_output/short_*.srt
+            shorts_output/short_*_thumb.jpg
             shorts_log.json
           if-no-files-found: warn
           retention-days: 7
