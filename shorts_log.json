@@ -94,5 +94,37 @@
     "content_source": "gemini:gemini-flash-lite-latest",
     "contains_synthetic_media": false,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-17",
+    "slot": 2,
+    "index": 4,
+    "format": "MISTAKE",
+    "area": "DevSecOps",
+    "title": "terraform apply mistake that deletes production infrastructure",
+    "video_id": "TEST_MODE_NO_UPLOAD",
+    "url": null,
+    "duration_sec": 33.6,
+    "host": true,
+    "terminal_scenes": 2,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": true,
+    "test_mode": true
+  },
+  {
+    "date": "2026-11-17",
+    "slot": 3,
+    "index": 5,
+    "format": "VERSUS",
+    "area": "Docker",
+    "title": "Docker ADD vs COPY: Stop using the wrong one",
+    "video_id": "TEST_MODE_NO_UPLOAD",
+    "url": null,
+    "duration_sec": 28.7,
+    "host": true,
+    "terminal_scenes": 1,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": true,
+    "test_mode": true
   }
 ]
