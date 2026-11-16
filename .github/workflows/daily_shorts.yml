@@ -1,0 +1,157 @@
+name: Daily Shorts (2 per day)
+
+# Two vertical Shorts per day with the same AI presenter as the long
+# videos (faceless fallback if the free Kaggle GPU is unavailable).
+# Publishing is scheduled by YouTube itself (publishAt) at 18:00 and 23:00
+# IST = 7:30 AM and 12:30 PM US Eastern, so GitHub's cron delay doesn't
+# matter. The bot is idempotent: a second trigger on the same day only
+# fills slots that are still missing.
+on:
+  schedule:
+    - cron: "37 1 * * *"   # ~7:07 AM IST (GitHub often starts it 1-3 h late)
+    - cron: "7 8 * * *"    # backup ~1:37 PM IST - only fills missing slots
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: "true = build the Shorts but don't upload"
+        required: false
+        default: "false"
+        type: string
+      count:
+        description: "How many Shorts to make (1-3)"
+        required: false
+        default: "2"
+        type: string
+      use_ai_host:
+        description: "true = AI presenter (Kaggle GPU), false = faceless"
+        required: false
+        default: "true"
+        type: string
+
+concurrency:
+  group: devops-daily-shorts
+  cancel-in-progress: false
+
+jobs:
+  shorts:
+    name: Create and Upload Shorts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      TZ: Asia/Kolkata
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install FFmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-delay 5 \
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" \
+            -o ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz
+          D="$(find . -maxdepth 1 -type d -name 'ffmpeg-*' | head -1)"
+          sudo cp "$D/bin/ffmpeg" "$D/bin/ffprobe" /usr/local/bin/
+          rm -rf ffmpeg.tar.xz "$D"
+          ffmpeg -version | head -1
+
+      - name: Cache Kokoro voice model
+        uses: actions/cache@v4
+        with:
+          path: models/kokoro
+          key: kokoro-onnx-model-v1.0
+
+      - name: Install Python packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Write Google credentials
+        shell: bash
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+          python3 - << 'PYEOF'
+          import json, os, sys
+          raw = os.environ.get("GOOGLE_CREDENTIALS", "").strip()
+          if not raw:
+              sys.exit("ERROR: GOOGLE_CREDENTIALS secret is empty.")
+          data = json.loads(raw)
+          missing = [k for k in ("token_uri", "client_id", "client_secret", "refresh_token") if not data.get(k)]
+          if missing:
+              sys.exit(f"ERROR: GOOGLE_CREDENTIALS is missing {missing}")
+          open("token.json", "w").write(json.dumps(data))
+          print("token.json written.")
+          PYEOF
+
+      - name: Make today's Shorts
+        shell: bash
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODELS: "gemini-flash-latest,gemini-flash-lite-latest,gemini-3.8-flash,gemini-3.5-flash-lite,gemini-pro-latest"
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+          SHORTS_PLAYLIST_ID: ${{ secrets.SHORTS_PLAYLIST_ID }}
+          HOST_IMAGE: "assets/host.png"
+          HOST_TIMEOUT_MIN: "40"
+          HOST_FACE_SIZE: "256"
+          HOST_ENHANCER: "gfpgan"
+          KOKORO_VOICE: "am_michael"
+          KOKORO_SPEED: "1.1"
+          KOKORO_MODEL_DIR: "models/kokoro"
+          SHORTS_PUBLISH_IST_HOURS: "18,23"
+          SHORTS_MAX_SECONDS: "58"
+          EXPECTED_CHANNEL_HANDLE: "devopsgeniuszone"
+          TEST_MODE: ${{ inputs.test_mode }}
+          COUNT: ${{ inputs.count }}
+          USE_AI_HOST: ${{ inputs.use_ai_host }}
+        run: |
+          set -euo pipefail
+          if [ "${USE_AI_HOST:-true}" = "false" ]; then export HOST_ENABLED="false"; else export HOST_ENABLED="true"; fi
+          FLAGS="--count ${COUNT:-2}"
+          if [ "${TEST_MODE:-false}" = "true" ]; then FLAGS="$FLAGS --test"; fi
+          echo "Shorts flags: $FLAGS | presenter: $HOST_ENABLED"
+          python3 shorts_bot.py $FLAGS
+
+      - name: Save Shorts as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "shorts-${{ github.run_number }}"
+          path: |
+            shorts_output/short_*.mp4
+            shorts_output/short_*.srt
+            shorts_log.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Commit Shorts log
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -f shorts_log.json ] || { echo "No shorts_log.json"; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add shorts_log.json
+          if git diff --cached --quiet; then echo "No changes."; exit 0; fi
+          git commit -m "Update shorts log"
+          for i in 1 2 3; do
+            git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && break
+            echo "push attempt $i failed - retrying"; sleep 10
+          done
