@@ -1600,16 +1600,22 @@ TITLE RULES:
   "Everything You Need to Know", "A Step-by-Step Walkthrough",
   "What Senior Engineers Actually Know", "The Practical Guide".
 - Add a year only if the topic is genuinely time-sensitive.
+- SEO: put seo_keyword (the phrase people actually type into YouTube
+  search) inside the first 40 characters of the title.
 
 JSON FORMAT:
 {{
+  "seo_keyword": "the 2-4 word phrase engineers actually search on YouTube for this video (e.g. 'kubernetes crashloopbackoff', 'terraform state lock')",
   "title": "Title following the TITLE RULES",
   "title_alternatives": ["Alternative 1", "Alternative 2"],
-  "description": "YouTube description, 1500-2500 characters: first line states the problem this video solves, then a short list of what the viewer will learn, then the exact literal line [[CHAPTERS]] on its own line (do NOT write timestamps yourself - this placeholder is replaced with real, audio-measured chapter timestamps automatically after generation), then a subscribe line mentioning tomorrow's topic, then hashtags",
+  "description": "YouTube description, 1500-2500 characters: first line states the problem this video solves AND contains seo_keyword word-for-word (only the first ~150 characters show in search), then a short list of what the viewer will learn, then the exact literal line [[CHAPTERS]] on its own line (do NOT write timestamps yourself - this placeholder is replaced with real, audio-measured chapter timestamps automatically after generation), then a subscribe line mentioning tomorrow's topic, then hashtags",
   "script": "The complete four-section spoken script",
-  "tags": ["15-25 specific, searched YouTube tags, no duplicates"],
-  "thumbnail_headline": "2-4 words, uppercase, the payoff or the pain, not just the tool name (e.g. 'DEPLOY ON EVERY PUSH', 'STOP STATE LOCKS')",
-  "thumbnail_subtext": "Max six words, the tool/topic name or a reason to click"
+  "tags": ["15-25 specific, searched YouTube tags, no duplicates; the first tag is seo_keyword"],
+  "thumbnail_headline": "2-4 words, uppercase, the payoff or the pain, not just the tool name (e.g. 'PODS KEEP CRASHING', 'STOP STATE LOCKS', 'DEPLOY WITH ZERO DOWNTIME'). Must match what the video really shows - curiosity, never a false promise",
+  "thumbnail_highlight": "the ONE word from thumbnail_headline to colour yellow (the pain or the payoff word)",
+  "thumbnail_badge": "max 24 characters: the real error/status string or result from the video, shown as a terminal badge (e.g. 'CrashLoopBackOff', 'Error acquiring state lock', 'OOMKilled', '0 DOWNTIME', 'BUILD PASSED')",
+  "thumbnail_badge_kind": "error or success",
+  "thumbnail_subtext": "the tool name only, max 3 words (e.g. 'Kubernetes', 'GitHub Actions')"
 }}
 """
 
@@ -1921,6 +1927,7 @@ def generate_fallback_content(topic: str, day_num: int, next_topic: str = "") ->
         ),
         "thumbnail_headline": _thumbnail_headline_from_topic(topic),
         "thumbnail_subtext": core,
+        "seo_keyword": core.lower(),
         "_source": "offline",
     }
 
@@ -4620,7 +4627,43 @@ def _render_with_motion(img_paths, output_path: Path, W: int, H: int):
 # ─────────────────────────────────────────
 # THUMBNAIL GENERATOR
 # ─────────────────────────────────────────
-def generate_thumbnail(title: str, headline: str, subtext: str, day_num: int, host_image=None) -> Path:
+def _add_watch_next(description: str) -> str:
+    """Internal links = longer sessions = more suggested traffic. Adds the
+    last 3 uploaded videos (and the playlist) at the end of the description,
+    before the hashtags so YouTube still shows the first 3 hashtags."""
+    try:
+        entries = json.loads(UPLOAD_LOG.read_text(encoding="utf-8")) if UPLOAD_LOG.exists() else []
+        if isinstance(entries, dict):
+            entries = entries.get("uploads", [])
+    except Exception:
+        entries = []
+    recent = [e for e in entries if isinstance(e, dict) and e.get("url") and e.get("title")][-3:][::-1]
+    lines = [f"\u25b6 {e['title']}\n{e['url']}" for e in recent]
+    if SERIES_PLAYLIST_ID:
+        lines.append(f"\u25b6 Full series playlist\nhttps://www.youtube.com/playlist?list={SERIES_PLAYLIST_ID}")
+    if not lines or "WATCH NEXT" in description:
+        return description
+    block = "WATCH NEXT\n" + "\n\n".join(lines)
+    m = re.search(r"(\n\s*(?:#\w+\s*){2,}\s*)$", description)
+    if m:
+        out = description[:m.start()].rstrip() + "\n\n" + block + "\n" + m.group(1)
+    else:
+        out = description.rstrip() + "\n\n" + block
+    return out[:4900]
+
+
+def generate_thumbnail(title: str, headline: str, subtext: str, day_num: int, host_image=None,
+                       highlight: str = "", badge: str = "", badge_kind: str = "error") -> Path:
+    """v3.4.0: high-CTR design from thumbnails.py (big outlined headline, one
+    yellow word, cut-out presenter with glow, terminal status badge). Falls
+    back to the v3.3 layout below if that module is missing."""
+    try:
+        import thumbnails
+        tool = subtext if subtext and len(subtext) <= 22 else (re.split(r"\s[—–-]\s|:", title, maxsplit=1)[0] or "")
+        return thumbnails.long_thumbnail(OUTPUT_DIR / "thumbnail.jpg", headline, highlight,
+                                         tool.strip()[:22], badge, badge_kind, host_image)
+    except Exception as exc:
+        print(f"[THUMB] New thumbnail design failed ({exc}) - using the classic layout.")
     W, H = 1280, 720
     img = Image.new("RGB", (W, H), BRAND["bg"])
     draw = ImageDraw.Draw(img)
@@ -4999,13 +5042,21 @@ def main():
 
     if not script_text: raise RuntimeError("The generated script is empty.")
 
-    raw_tags = content.get("tags", []) or []
+    seo_keyword = re.sub(r"\s+", " ", str(content.get("seo_keyword", "") or "")).strip().lower()
+    raw_tags = ([seo_keyword] if seo_keyword else []) + list(content.get("tags", []) or [])
     raw_tags.extend(FALLBACK_TAGS)
     tags = sanitize_youtube_tags(raw_tags)
     if not tags: raise RuntimeError("No valid YouTube tags were generated.")
 
     thumbnail_headline = str(content.get("thumbnail_headline", title[:40].upper())).strip()
-    thumbnail_subtext = str(content.get("thumbnail_subtext", "Full guide for DevOps engineers")).strip()
+    thumbnail_subtext = str(content.get("thumbnail_subtext", "") or "").strip()
+    thumb_extra = {
+        "highlight": str(content.get("thumbnail_highlight", "") or "").strip(),
+        "badge": str(content.get("thumbnail_badge", "") or "").strip()[:26],
+        "badge_kind": str(content.get("thumbnail_badge_kind", "error") or "error").strip().lower(),
+    }
+    if seo_keyword:
+        print(f"[SEO] Search keyword : {seo_keyword}")
 
     word_count = _spoken_word_count(script_text)
     print(f"[CONTENT] Title          : {title}")
@@ -5073,8 +5124,9 @@ def main():
     size_mb = video_file.stat().st_size / (1024 * 1024)
     print(f"[VIDEO] Done: {video_file} ({size_mb:.1f} MB)")
 
+    description = _add_watch_next(description)
     thumbnail_path = generate_thumbnail(title, thumbnail_headline, thumbnail_subtext, day_num,
-                                        host_image=HOST_IMAGE if host_used else None)
+                                        host_image=HOST_IMAGE if host_used else None, **thumb_extra)
     print(f"[THUMB] Saved: {thumbnail_path}")
 
     captions_path = OUTPUT_DIR / "captions_en.srt"

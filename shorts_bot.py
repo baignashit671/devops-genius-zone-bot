@@ -61,6 +61,8 @@ SHORTS_PER_DAY = int(os.environ.get("SHORTS_PER_DAY", "2"))
 SHORTS_PUBLISH_IST_HOURS = [int(x) for x in os.environ.get("SHORTS_PUBLISH_IST_HOURS", "18,23").split(",") if x.strip()]
 SHORTS_MAX_SECONDS = float(os.environ.get("SHORTS_MAX_SECONDS", "58"))
 SHORTS_PLAYLIST_ID = os.environ.get("SHORTS_PLAYLIST_ID", "").strip()
+SHORTS_GEMINI_TIMEOUT_SEC = int(os.environ.get("SHORTS_GEMINI_TIMEOUT_SEC", "120"))
+_QUOTA_EXHAUSTED: set = set()
 HOST_ENABLED = core.HOST_ENABLED
 HOST_IMAGE = core.HOST_IMAGE
 IST = core.IST_TIMEZONE
@@ -123,7 +125,9 @@ def gemini_short_script(fmt: str, area: str, recent_titles: list, long_video: di
     if not core.HAS_GEMINI or not os.environ.get("GEMINI_API_KEY"):
         raise RuntimeError("GEMINI_API_KEY is not set")
     from google import genai
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": core.GEMINI_TIMEOUT_SEC * 1000})
+    # A Short's JSON is small: a call that hasn't answered in 2 min is stuck
+    # (the 5-min long-video timeout wasted 5 min on a single 504 here).
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"timeout": SHORTS_GEMINI_TIMEOUT_SEC * 1000})
     st = core.BLS_STATS["sec"] if "Sec" in area else core.BLS_STATS["dev"]
     stat = f"U.S. Bureau of Labor Statistics, May 2025 median pay for {st['role']}: ${st['pay']:,}"
     brief = FORMAT_BRIEFS[fmt].format(area=area, stat=stat)
@@ -158,12 +162,18 @@ On-screen visual types (field "screen"):
 
 Return ONLY this JSON:
 {{
-  "title": "under 55 characters, curiosity + payoff, names the tool, no hashtags",
+  "seo_keyword": "the 2-4 word phrase people actually type into YouTube search for this (e.g. kubernetes roadmap, docker interview questions)",
+  "title": "under 55 characters, contains seo_keyword in the first 4 words, curiosity + payoff, no hashtags",
   "hook_text": "2-5 WORDS IN CAPS for the top of the first frame",
   "beats": [{{"say": "...", "screen": {{...}}}}],
-  "description": "2-3 sentences: what the viewer learns + why it matters",
+  "description": "2-3 sentences; the FIRST sentence contains seo_keyword naturally; what the viewer learns + why it matters",
   "tags": ["8-12 specific search tags"],
-  "hashtags": ["#devops", "#shorts", "2-3 more specific ones"]
+  "hashtags": ["#devops", "#shorts", "2-3 more specific ones"],
+  "thumbnail_headline": "2-4 words, the pain or payoff, true to the video (e.g. 'PODS KEEP CRASHING')",
+  "thumbnail_highlight": "the ONE word from thumbnail_headline to colour yellow",
+  "thumbnail_badge": "max 24 chars: the real error/command/result shown in the Short (e.g. 'OOMKilled', '--check --diff')",
+  "thumbnail_badge_kind": "error or success",
+  "tool": "the tool name, max 2 words (e.g. 'Kubernetes')"
 }}
 """
     last_exc = None
@@ -172,6 +182,8 @@ Return ONLY this JSON:
         if pos and pos % len(core.GEMINI_MODELS) == 0:
             log(f"every model failed once - waiting {core.GEMINI_CHAIN_WAIT_SEC}s, then trying the whole chain again")
             time.sleep(core.GEMINI_CHAIN_WAIT_SEC)
+        if model in _QUOTA_EXHAUSTED:
+            continue
         for attempt in range(1, 3):
             try:
                 log(f"Gemini {model} ({fmt} / {area}) attempt {attempt}")
@@ -192,6 +204,10 @@ Return ONLY this JSON:
                 msg = str(exc)
                 log(f"{model} failed: {msg[:200]}")
                 if re.search(r"\b404\b|NOT_FOUND|not found", msg):
+                    break
+                if re.search(r"\b429\b|RESOURCE_EXHAUSTED", msg) and "quota" in msg.lower():
+                    _QUOTA_EXHAUSTED.add(model)   # daily free quota gone - skip it for the rest of this run
+                    log(f"{model}: daily quota used up - skipping it for the rest of this run")
                     break
                 time.sleep((20 if re.search(r"\b(503|504)\b|UNAVAILABLE|DEADLINE", msg) else 10) * attempt)
     raise RuntimeError(f"all Gemini models failed: {last_exc}")
@@ -498,7 +514,10 @@ def upload_short(service, video: Path, short: dict, synthetic: bool, slot: int) 
     desc += f"\n\nNew DevOps tip every day - subscribe: {core.CHANNEL_URL}\n\n" + " ".join(hashtags)
     if synthetic:
         desc += "\n\nTransparency: the presenter is an AI-generated avatar and the voice is AI text-to-speech."
-    tags = core.sanitize_youtube_tags(list(short.get("tags", [])) + ["devops", "devops shorts", "devops tips"])
+    kw = str(short.get("seo_keyword", "")).strip()
+    area = str(short.get("_area", "")).strip()
+    tags = core.sanitize_youtube_tags(([kw] if kw else []) + list(short.get("tags", []))
+                                      + ([area.lower()] if area else []) + ["devops", "devops shorts", "devops tips"])
     body = {
         "snippet": {"title": title, "description": desc, "tags": tags, "categoryId": "27",
                     "defaultLanguage": "en-US", "defaultAudioLanguage": "en-US"},
@@ -516,6 +535,20 @@ def upload_short(service, video: Path, short: dict, synthetic: bool, slot: int) 
     while resp is None:
         _, resp = req.next_chunk()
     return resp["id"]
+
+
+def make_short_thumbnail(short: dict, host_used: bool, path: Path):
+    try:
+        import thumbnails
+        headline = short.get("thumbnail_headline") or short.get("hook_text") or short.get("title", "")
+        return thumbnails.short_thumbnail(
+            path, headline, short.get("thumbnail_highlight", ""),
+            str(short.get("tool") or short.get("_area", ""))[:22],
+            str(short.get("thumbnail_badge", ""))[:26], short.get("thumbnail_badge_kind", "error"),
+            HOST_IMAGE if (host_used and HOST_IMAGE.exists()) else None)
+    except Exception as exc:
+        log(f"thumbnail skipped: {exc}")
+        return None
 
 
 # ---------------------------------------------------------------- main
@@ -596,10 +629,15 @@ def main():
         out = OUT_DIR / f"short_{today}_{n + 1}.mp4"
         info = build_short_video(s, s["_durs"], s["_audio"], out, host_clips.get(n))
         srt = build_srt(s["beats"], s["_durs"], OUT_DIR / f"short_{today}_{n + 1}.srt")
+        thumb = make_short_thumbnail(s, info["host"], OUT_DIR / f"short_{today}_{n + 1}_thumb.jpg")
         vid = "TEST_MODE_NO_UPLOAD"
         if not args.test:
             vid = upload_short(service, out, s, info["host"], s["_slot"])
             core.upload_captions(service, vid, srt)
+            if thumb:
+                # Custom Shorts thumbnails (July 2026) are rolling out from YPP channels first;
+                # if the channel isn't eligible yet YouTube rejects it and the Short keeps its frame.
+                core.set_thumbnail(service, vid, thumb)
             if SHORTS_PLAYLIST_ID:
                 core.add_video_to_playlist(service, vid, SHORTS_PLAYLIST_ID)
             log(f"uploaded https://youtube.com/shorts/{vid}")
