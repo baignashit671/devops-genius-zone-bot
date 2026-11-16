@@ -62,5 +62,37 @@
     "content_source": "gemini:gemini-3.5-flash-lite",
     "contains_synthetic_media": false,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-17",
+    "slot": 0,
+    "index": 2,
+    "format": "COMMAND",
+    "area": "Ansible",
+    "title": "Stop Breaking Production With This Ansible Flag",
+    "video_id": "2NDqRr7oRy0",
+    "url": "https://youtube.com/shorts/2NDqRr7oRy0",
+    "duration_sec": 33.0,
+    "host": false,
+    "terminal_scenes": 1,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-17",
+    "slot": 1,
+    "index": 3,
+    "format": "INTERVIEW",
+    "area": "AWS",
+    "title": "Pass The AWS SRE Interview Question On S3",
+    "video_id": "pxpgPFkKzu0",
+    "url": "https://youtube.com/shorts/pxpgPFkKzu0",
+    "duration_sec": 35.6,
+    "host": false,
+    "terminal_scenes": 0,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
