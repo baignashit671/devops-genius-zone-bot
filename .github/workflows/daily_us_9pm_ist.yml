@@ -771,7 +771,11 @@ jobs:
           # REMOVED [skip ci] so the cron job doesn't pause after 60 days
           git commit \
             -m "Update upload log"
-          git push origin "HEAD:${{ github.ref_name }}"
+          # The Shorts workflow also commits to main - rebase on top of it first.
+          for i in 1 2 3; do
+            git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && break
+            echo "push attempt $i failed - retrying"; sleep 10
+          done
           echo ""
           echo "Upload log committed successfully."
           echo "=========================================="
