@@ -30,5 +30,37 @@
     "content_source": "gemini:gemini-3.5-flash-lite",
     "contains_synthetic_media": false,
     "test_mode": true
+  },
+  {
+    "date": "2026-11-16",
+    "slot": 0,
+    "index": 0,
+    "format": "ROADMAP",
+    "area": "Kubernetes",
+    "title": "The exact Kubernetes hiring roadmap for US DevOps",
+    "video_id": "kUc10JGNQ7o",
+    "url": "https://youtube.com/shorts/kUc10JGNQ7o",
+    "duration_sec": 43.6,
+    "host": false,
+    "terminal_scenes": 0,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-16",
+    "slot": 1,
+    "index": 1,
+    "format": "TOP_N",
+    "area": "Linux for DevOps",
+    "title": "3 Linux Projects That Make Your DevOps Resume Stand Out",
+    "video_id": "Ca58jKT9Tv4",
+    "url": "https://youtube.com/shorts/Ca58jKT9Tv4",
+    "duration_sec": 33.4,
+    "host": false,
+    "terminal_scenes": 0,
+    "content_source": "gemini:gemini-3.5-flash-lite",
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
