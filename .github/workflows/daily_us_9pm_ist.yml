@@ -340,7 +340,26 @@ jobs:
                   sys.exit(1)
               if creds.refresh_token:
                   print("Refreshing Google access token...")
-                  creds.refresh(Request())
+                  try:
+                      creds.refresh(Request())
+                  except Exception as e:
+                      if "invalid_scope" not in str(e):
+                          raise
+                      # The refresh token was granted FEWER scopes than we ask
+                      # for. Refresh without a scope list to see what it has.
+                      raw = json.load(open("token.json"))
+                      probe = Credentials(None, refresh_token=raw["refresh_token"], token_uri=raw["token_uri"],
+                                          client_id=raw["client_id"], client_secret=raw["client_secret"])
+                      probe.refresh(Request())
+                      granted = sorted(getattr(probe, "granted_scopes", None) or [])
+                      print("")
+                      print("ERROR: invalid_scope - this token was NOT granted all YouTube permissions.")
+                      print("Granted to this token:", granted or "(Google did not report them)")
+                      print("Required:", SCOPES)
+                      print("Fix: on your PC run  python reauth_youtube.py  (choose the DevOps Genius Zone")
+                      print("account, tick EVERY checkbox / 'Select all' on the consent screen), then paste")
+                      print("the printed JSON into the GOOGLE_CREDENTIALS repository secret.")
+                      sys.exit(1)
                   refreshed_data = json.loads(
                       creds.to_json()
                   )
@@ -525,7 +544,7 @@ jobs:
           HOST_ENHANCER: "gfpgan"
           # ---- v3.3.0: voice + captions + script ----
           KOKORO_VOICE: "am_michael"
-          KOKORO_SPEED: "1.0"
+          KOKORO_SPEED: "1.1"   # 1.0 made run #58 16.8 min for an ~1,800-word script
           KOKORO_MODEL_DIR: "models/kokoro"
           BURN_CAPTIONS: "true"
           SCRIPT_REVIEW: "true"
