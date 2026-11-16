@@ -99,20 +99,34 @@ def _duration(path: Path) -> float:
         return 0.0
 
 
+def _dataset_exists(ds_id: str) -> bool:
+    out = _kaggle(["datasets", "status", ds_id], timeout=120, check=False).strip().lower()
+    return any(w in out for w in ("ready", "pending", "processing"))
+
+
 def _upload_dataset(folder: Path, user: str, run_id: str):
+    """Upload the inputs as a private dataset: CREATE it on the first run,
+    add a new VERSION afterwards. (Kaggle's current API answers a version
+    request for a dataset that doesn't exist yet with 403 Forbidden, not 404 -
+    run #58 lost its presenter to exactly that.)"""
     ds_id = f"{user}/{DATASET_SLUG}"
     (folder / "dataset-metadata.json").write_text(json.dumps({
         "title": DATASET_SLUG, "id": ds_id, "licenses": [{"name": "CC0-1.0"}],
     }))
-    try:
-        _kaggle(["datasets", "version", "-p", str(folder), "-m", f"run {run_id}", "-q", "-d"], timeout=600)
+    if _dataset_exists(ds_id):
+        _kaggle(["datasets", "version", "-p", str(folder), "-m", f"run {run_id}", "-q"], timeout=600)
         _log(f"Uploaded a new version of the private dataset {ds_id}.")
-    except RuntimeError as exc:
-        if not re.search(r"404|not found|does not exist|NotFound", str(exc), re.I):
-            raise
-        _log(f"Dataset {ds_id} does not exist yet - creating it (private).")
-        _kaggle(["datasets", "create", "-p", str(folder), "-q"], timeout=600)
+    else:
+        _log(f"Creating the private dataset {ds_id} (first run).")
+        try:
+            _kaggle(["datasets", "create", "-p", str(folder), "-q"], timeout=600)
+        except RuntimeError as exc:
+            if not re.search(r"already exists|409|conflict", str(exc), re.I):
+                raise RuntimeError(f"{exc}\nCheck that the KAGGLE_USERNAME secret is exactly your Kaggle "
+                                   f"username (kaggle.com/<username>) and the API token is current.") from exc
+            _kaggle(["datasets", "version", "-p", str(folder), "-m", f"run {run_id}", "-q"], timeout=600)
     deadline = time.time() + 900
+    time.sleep(10)
     while time.time() < deadline:
         st = _kaggle(["datasets", "status", ds_id], timeout=120, check=False).strip().lower()
         if "ready" in st:
