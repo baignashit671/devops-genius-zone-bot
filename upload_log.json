@@ -2469,5 +2469,42 @@
     "burned_captions": true,
     "contains_synthetic_media": false,
     "test_mode": true
+  },
+  {
+    "day": 59,
+    "series": "ai-in-devops-2026",
+    "date": "2026-11-17",
+    "topic": "Docker Compose Tutorial \u2014 Local Development Made Easy",
+    "title": "Docker Compose Tutorial: Fix Local Dev Networking and Volume Sync",
+    "video_id": "1wp1jzN1Uv8",
+    "url": "https://youtube.com/watch?v=1wp1jzN1Uv8",
+    "duration_min": 8.2,
+    "word_count": 1087,
+    "tags": [
+      "docker compose tutorial",
+      "devops",
+      "devops engineer",
+      "cloud computing",
+      "aws",
+      "kubernetes",
+      "docker",
+      "cicd",
+      "terraform",
+      "github actions",
+      "learn devops",
+      "devops tutorial",
+      "devops career",
+      "tech career usa",
+      "devops 2026"
+    ],
+    "ai_generated": true,
+    "content_source": "gemini:gemini-3.5-flash-lite",
+    "tts_engine": "kokoro",
+    "slides_engine": "pptx",
+    "terminal_scenes": 7,
+    "host_seconds": 0.0,
+    "burned_captions": true,
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
