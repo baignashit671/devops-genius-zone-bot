@@ -126,5 +126,37 @@
     "content_source": "gemini:gemini-flash-lite-latest",
     "contains_synthetic_media": true,
     "test_mode": true
+  },
+  {
+    "date": "2026-11-18",
+    "slot": 0,
+    "index": 4,
+    "format": "MISTAKE",
+    "area": "DevSecOps",
+    "title": "Trivy container scan mistake that misses root CVEs",
+    "video_id": "ERnuO0WUy6Q",
+    "url": "https://youtube.com/shorts/ERnuO0WUy6Q",
+    "duration_sec": 31.1,
+    "host": false,
+    "terminal_scenes": 2,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-18",
+    "slot": 1,
+    "index": 5,
+    "format": "VERSUS",
+    "area": "Docker",
+    "title": "Docker ENTRYPOINT vs CMD: What You Get Wrong",
+    "video_id": "PPjVJpNo_s8",
+    "url": "https://youtube.com/shorts/PPjVJpNo_s8",
+    "duration_sec": 49.3,
+    "host": false,
+    "terminal_scenes": 3,
+    "content_source": "gemini:gemini-flash-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
