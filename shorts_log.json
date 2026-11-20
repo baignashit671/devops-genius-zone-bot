@@ -190,5 +190,37 @@
     "content_source": "gemini:gemini-flash-lite-latest",
     "contains_synthetic_media": true,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-20",
+    "slot": 0,
+    "index": 8,
+    "format": "TOP_N",
+    "area": "CI/CD with GitHub Actions",
+    "title": "GitHub Actions Workflow Mistakes US Hiring Managers Reject",
+    "video_id": "YDh-3ywk-fw",
+    "url": "https://youtube.com/shorts/YDh-3ywk-fw",
+    "duration_sec": 38.9,
+    "host": false,
+    "terminal_scenes": 0,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-20",
+    "slot": 1,
+    "index": 9,
+    "format": "COMMAND",
+    "area": "AI tools for DevOps engineers",
+    "title": "terraform plan flag that stops accidental production outages",
+    "video_id": "0bJxHntEBTE",
+    "url": "https://youtube.com/shorts/0bJxHntEBTE",
+    "duration_sec": 32.1,
+    "host": false,
+    "terminal_scenes": 2,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
