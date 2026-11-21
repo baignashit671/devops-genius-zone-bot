@@ -222,5 +222,37 @@
     "content_source": "gemini:gemini-flash-lite-latest",
     "contains_synthetic_media": false,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-21",
+    "slot": 0,
+    "index": 10,
+    "format": "INTERVIEW",
+    "area": "Terraform",
+    "title": "Terraform interview question that separates juniors from seniors",
+    "video_id": "-ehR_FFAx7E",
+    "url": "https://youtube.com/shorts/-ehR_FFAx7E",
+    "duration_sec": 30.8,
+    "host": false,
+    "terminal_scenes": 1,
+    "content_source": "gemini:gemini-3.5-flash-lite",
+    "contains_synthetic_media": false,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-21",
+    "slot": 1,
+    "index": 11,
+    "format": "MISTAKE",
+    "area": "Monitoring with Prometheus and Grafana",
+    "title": "Prometheus alert mistake breaking production night shifts",
+    "video_id": "u6lE8aNQR68",
+    "url": "https://youtube.com/shorts/u6lE8aNQR68",
+    "duration_sec": 25.5,
+    "host": false,
+    "terminal_scenes": 2,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
