@@ -254,5 +254,37 @@
     "content_source": "gemini:gemini-flash-lite-latest",
     "contains_synthetic_media": false,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-22",
+    "slot": 0,
+    "index": 12,
+    "format": "VERSUS",
+    "area": "Kubernetes",
+    "title": "Kubernetes Liveness vs Readiness: Stop Killing Good Pods",
+    "video_id": "Pv9oUGjvUwc",
+    "url": "https://youtube.com/shorts/Pv9oUGjvUwc",
+    "duration_sec": 30.1,
+    "host": true,
+    "terminal_scenes": 2,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": true,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-22",
+    "slot": 1,
+    "index": 13,
+    "format": "CAREER",
+    "area": "Linux for DevOps",
+    "title": "Linux skills for devops that US hiring managers want",
+    "video_id": "gIB2837wYiY",
+    "url": "https://youtube.com/shorts/gIB2837wYiY",
+    "duration_sec": 35.6,
+    "host": true,
+    "terminal_scenes": 1,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": true,
+    "test_mode": false
   }
 ]
