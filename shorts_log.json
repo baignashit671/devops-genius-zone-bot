@@ -286,5 +286,37 @@
     "content_source": "gemini:gemini-flash-lite-latest",
     "contains_synthetic_media": true,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-23",
+    "slot": 0,
+    "index": 14,
+    "format": "ROADMAP",
+    "area": "Ansible",
+    "title": "Ansible roadmap US hiring managers actually expect",
+    "video_id": "SigHNjUFDqY",
+    "url": "https://youtube.com/shorts/SigHNjUFDqY",
+    "duration_sec": 41.7,
+    "host": false,
+    "terminal_scenes": 0,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-23",
+    "slot": 1,
+    "index": 15,
+    "format": "TOP_N",
+    "area": "AWS",
+    "title": "AWS Resume Projects US Recruiters Actually Notice",
+    "video_id": "Id572N4fRMg",
+    "url": "https://youtube.com/shorts/Id572N4fRMg",
+    "duration_sec": 38.5,
+    "host": false,
+    "terminal_scenes": 0,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
