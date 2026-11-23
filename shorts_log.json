@@ -318,5 +318,37 @@
     "content_source": "gemini:gemini-flash-lite-latest",
     "contains_synthetic_media": false,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-24",
+    "slot": 0,
+    "index": 16,
+    "format": "COMMAND",
+    "area": "DevSecOps",
+    "title": "dockerfile cache optimization trick that cuts build time in half",
+    "video_id": "kaqODQ4iNEw",
+    "url": "https://youtube.com/shorts/kaqODQ4iNEw",
+    "duration_sec": 32.0,
+    "host": true,
+    "terminal_scenes": 1,
+    "content_source": "gemini:gemini-3.5-flash-lite",
+    "contains_synthetic_media": true,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-24",
+    "slot": 1,
+    "index": 17,
+    "format": "INTERVIEW",
+    "area": "Docker",
+    "title": "docker interview questions senior engineers ace easily",
+    "video_id": "KB0k9W-6cUo",
+    "url": "https://youtube.com/shorts/KB0k9W-6cUo",
+    "duration_sec": 34.9,
+    "host": true,
+    "terminal_scenes": 2,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": true,
+    "test_mode": false
   }
 ]
