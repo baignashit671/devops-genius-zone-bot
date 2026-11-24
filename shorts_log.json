@@ -350,5 +350,37 @@
     "content_source": "gemini:gemini-flash-lite-latest",
     "contains_synthetic_media": true,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-25",
+    "slot": 0,
+    "index": 18,
+    "format": "MISTAKE",
+    "area": "Git",
+    "title": "Git merge mistake that wipes out production code",
+    "video_id": "PVZVMzcjgOk",
+    "url": "https://youtube.com/shorts/PVZVMzcjgOk",
+    "duration_sec": 31.0,
+    "host": false,
+    "terminal_scenes": 3,
+    "content_source": "gemini:gemini-3.5-flash-lite",
+    "contains_synthetic_media": false,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-25",
+    "slot": 1,
+    "index": 19,
+    "format": "VERSUS",
+    "area": "Helm and GitOps (Argo CD)",
+    "title": "Helm vs Argo CD: Stop using the wrong tool",
+    "video_id": "XryoVZuHloA",
+    "url": "https://youtube.com/shorts/XryoVZuHloA",
+    "duration_sec": 29.4,
+    "host": false,
+    "terminal_scenes": 1,
+    "content_source": "gemini:gemini-3.5-flash-lite",
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
