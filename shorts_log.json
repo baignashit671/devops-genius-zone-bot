@@ -382,5 +382,37 @@
     "content_source": "gemini:gemini-3.5-flash-lite",
     "contains_synthetic_media": false,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-26",
+    "slot": 0,
+    "index": 20,
+    "format": "CAREER",
+    "area": "CI/CD with GitHub Actions",
+    "title": "github actions workflow skill that boosts devops pay",
+    "video_id": "YEAzauOz-ng",
+    "url": "https://youtube.com/shorts/YEAzauOz-ng",
+    "duration_sec": 34.9,
+    "host": false,
+    "terminal_scenes": 1,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-26",
+    "slot": 1,
+    "index": 21,
+    "format": "ROADMAP",
+    "area": "AI tools for DevOps engineers",
+    "title": "AI Tools for DevOps: The Exact 4 Step Roadmap US Hiring Managers Expect",
+    "video_id": "prS75G8GJOk",
+    "url": "https://youtube.com/shorts/prS75G8GJOk",
+    "duration_sec": 50.7,
+    "host": false,
+    "terminal_scenes": 0,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
