@@ -414,5 +414,37 @@
     "content_source": "gemini:gemini-flash-lite-latest",
     "contains_synthetic_media": false,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-27",
+    "slot": 0,
+    "index": 22,
+    "format": "TOP_N",
+    "area": "Terraform",
+    "title": "Terraform Commands US Hiring Managers Expect You To Know",
+    "video_id": "0AjKZEn_K6U",
+    "url": "https://youtube.com/shorts/0AjKZEn_K6U",
+    "duration_sec": 35.8,
+    "host": false,
+    "terminal_scenes": 0,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-27",
+    "slot": 1,
+    "index": 23,
+    "format": "COMMAND",
+    "area": "Monitoring with Prometheus and Grafana",
+    "title": "Prometheus range query trick that saves your dashboards",
+    "video_id": "0NvPAVgcTJc",
+    "url": "https://youtube.com/shorts/0NvPAVgcTJc",
+    "duration_sec": 34.5,
+    "host": false,
+    "terminal_scenes": 1,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
