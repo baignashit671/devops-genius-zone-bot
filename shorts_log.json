@@ -446,5 +446,37 @@
     "content_source": "gemini:gemini-flash-lite-latest",
     "contains_synthetic_media": false,
     "test_mode": false
+  },
+  {
+    "date": "2026-11-28",
+    "slot": 0,
+    "index": 24,
+    "format": "INTERVIEW",
+    "area": "Kubernetes",
+    "title": "Kubernetes Probe Interview Question: How Seniors Answer It",
+    "video_id": "4Ya_9G9Wbes",
+    "url": "https://youtube.com/shorts/4Ya_9G9Wbes",
+    "duration_sec": 32.6,
+    "host": false,
+    "terminal_scenes": 1,
+    "content_source": "gemini:gemini-3.5-flash-lite",
+    "contains_synthetic_media": false,
+    "test_mode": false
+  },
+  {
+    "date": "2026-11-28",
+    "slot": 1,
+    "index": 25,
+    "format": "MISTAKE",
+    "area": "Linux for DevOps",
+    "title": "Linux log rotation mistake that fills up root disk",
+    "video_id": "L6eImJAuPhg",
+    "url": "https://youtube.com/shorts/L6eImJAuPhg",
+    "duration_sec": 34.5,
+    "host": false,
+    "terminal_scenes": 2,
+    "content_source": "gemini:gemini-flash-lite-latest",
+    "contains_synthetic_media": false,
+    "test_mode": false
   }
 ]
